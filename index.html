@@ -154,7 +154,7 @@
                 <ol class="list-decimal pl-4 space-y-1">
                     <li>Go to <a href="https://console.firebase.google.com" target="_blank" class="text-red-400 underline">Firebase Console</a> and create/select a project.</li>
                     <li>Click <strong>Build > Authentication</strong>, enable <strong>Anonymous</strong> sign-in.</li>
-                    <li>Click <strong>Build > Firestore Database</strong> and click <strong>Create Database</strong> (start in Test Mode).</li>
+                    <li>Click <strong>Build > Firestore Database</strong> and click <strong>Create Database</strong>.</li>
                     <li>Copy credentials from <strong>Project Settings > Web App</strong> and paste above.</li>
                 </ol>
             </div>
@@ -167,15 +167,18 @@
         import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
+        // Shared library configuration key
+        const SHARED_LIB_ID = "my_shared_movie_library";
+
         // Default / Stored Firebase Configuration
         let firebaseConfig = JSON.parse(localStorage.getItem('custom_firebase_config')) || {
             apiKey: "AIzaSyCjkD_0JBkkumXbhG7WFlhK0prW2wxNOgI",
-  authDomain: "movie-tracker-747e8.firebaseapp.com",
-  databaseURL: "https://movie-tracker-747e8-default-rtdb.firebaseio.com",
-  projectId: "movie-tracker-747e8",
-  storageBucket: "movie-tracker-747e8.firebasestorage.app",
-  messagingSenderId: "401855328980",
-  appId: "1:401855328980:web:1d5d460d8810d856798141"
+            authDomain: "movie-tracker-747e8.firebaseapp.com",
+            databaseURL: "https://movie-tracker-747e8-default-rtdb.firebaseio.com",
+            projectId: "movie-tracker-747e8",
+            storageBucket: "movie-tracker-747e8.firebasestorage.app",
+            messagingSenderId: "401855328980",
+            appId: "1:401855328980:web:1d5d460d8810d856798141"
         };
 
         let db = null;
@@ -196,7 +199,6 @@
             const check2 = document.getElementById('check2');
             const check3 = document.getElementById('check3');
 
-            // 1. Check Key Validity
             if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("YOUR_FIREBASE_API_KEY")) {
                 updateStatus('warning', 'Missing Firebase Keys', 'Using local browser storage fallback. Click Setup to configure real-time Cloud Sync.');
                 check1.innerHTML = '❌ Placeholder Keys';
@@ -214,7 +216,6 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // 2. Authenticate
                 signInAnonymously(auth).catch((err) => {
                     console.error("Auth Exception:", err);
                     check2.innerHTML = '❌ Auth Failed (Enable in Console)';
@@ -222,26 +223,34 @@
                     updateStatus('error', 'Auth Error', 'Anonymous Auth is disabled in Firebase Console.');
                 });
 
-                onAuthStateChanged(auth, (user) => {
+                onAuthStateChanged(auth, async (user) => {
+                    if (!user) {
+                        try {
+                            const userCred = await signInAnonymously(auth);
+                            user = userCred.user;
+                        } catch (err) {
+                            console.error("Auth error:", err);
+                        }
+                    }
+
                     if (user) {
                         currentUser = user;
-                        check2.innerHTML = '✓ Signed In Anonymously';
+                        check2.innerHTML = '✓ Anonymous Auth Ready';
                         check2.className = 'font-bold text-green-500';
 
-                        // 3. Firestore Sync Listener
-                        const moviesRef = collection(db, "users", currentUser.uid, "movies");
-                        onSnapshot(moviesRef, (snapshot) => {
-                            check3.innerHTML = '✓ Connected';
-                            check3.className = 'font-bold text-green-500';
-                            updateStatus('success', '☁️ Live Cloud Sync Active', `Synced with User ID: ${user.uid.substring(0,6)}...`);
+                        updateStatus('success', '☁️ Live Cloud Sync Active', 'Connected to real-time shared database.');
 
+                        const moviesRef = collection(db, "shared_libraries", SHARED_LIB_ID, "movies");
+                        onSnapshot(moviesRef, (snapshot) => {
                             movieCollection = snapshot.docs.map(doc => doc.data());
+                            check3.innerHTML = '✓ Database Connected';
+                            check3.className = 'font-bold text-green-500';
                             updateUI();
-                        }, (err) => {
-                            console.error("Firestore Listener Error:", err);
-                            check3.innerHTML = '❌ Rules Denied';
+                        }, (error) => {
+                            console.error("Firestore error:", error);
+                            check3.innerHTML = '❌ Permission Error';
                             check3.className = 'font-bold text-red-500';
-                            updateStatus('error', 'Database Permission Error', 'Check Firestore Security Rules in console.');
+                            updateStatus('error', 'Database Error', 'Check Firestore Security Rules.');
                         });
                     }
                 });
@@ -296,10 +305,8 @@
                     };
 
                     if (currentUser && db) {
-                        // Save to Firebase Cloud
-                        await setDoc(doc(db, "users", currentUser.uid, "movies", data.imdbID), movieData);
+                        await setDoc(doc(db, "shared_libraries", SHARED_LIB_ID, "movies", data.imdbID), movieData);
                     } else {
-                        // Fallback to LocalStorage
                         saveToLocalStorage(movieData);
                     }
                     titleInput.value = '';
@@ -314,7 +321,7 @@
         // Delete Movie Action
         window.deleteMovie = async function(imdbID) {
             if (currentUser && db) {
-                await deleteDoc(doc(db, "users", currentUser.uid, "movies", imdbID));
+                await deleteDoc(doc(db, "shared_libraries", SHARED_LIB_ID, "movies", imdbID));
             } else {
                 movieCollection = movieCollection.filter(m => m.imdbID !== imdbID);
                 localStorage.setItem('fallback_movies', JSON.stringify(movieCollection));
@@ -362,7 +369,7 @@
                         if (data.Response === "True") {
                             const movieData = { Title: data.Title, Year: data.Year, Poster: data.Poster, Genre: data.Genre, imdbID: data.imdbID };
                             if (currentUser && db) {
-                                setDoc(doc(db, "users", currentUser.uid, "movies", data.imdbID), movieData);
+                                setDoc(doc(db, "shared_libraries", SHARED_LIB_ID, "movies", data.imdbID), movieData);
                             } else {
                                 saveToLocalStorage(movieData);
                             }
@@ -412,14 +419,12 @@
         window.saveConfigFromTextarea = function() {
             const text = document.getElementById('configPasteArea').value;
             try {
-                // Parse object out of string
                 const jsonMatch = text.match(/\{[\s\S]*\}/);
                 if (!jsonMatch) throw new Error("Could not parse object structure.");
                 
-                // Clean JavaScript keys to JSON format
                 const jsonStr = jsonMatch[0]
                     .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":')
-                                        .replace(/'/g, '"');
+                    .replace(/'/g, '"');
                 
                 const parsed = JSON.parse(jsonStr);
                 localStorage.setItem('custom_firebase_config', JSON.stringify(parsed));
