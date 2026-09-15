@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎬 Movie Collector & Cloud Sync Diagnostics</title>
+    <!-- HTML5 QR Code Scanner Library -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f1016;
+            color: #f3f4f6;
+        }
+        .card-blur {
+            background: rgba(26, 29, 41, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+    <div class="max-w-4xl mx-auto space-y-6">
+        
+        <!-- Header Section -->
+        <header class="text-center space-y-2">
+            <h1 class="text-3xl md:text-4xl font-extrabold bg-gradient-to-r from-white via-red-500 to-red-600 bg-clip-text text-transparent">
+                🎬 Movie Collector & Scanner
+            </h1>
+            <p class="text-gray-400 text-sm">Cross-device real-time sync with Firebase & OMDb</p>
+        </header>
+
+        <!-- Cloud Connection Status Banner -->
+        <div id="statusBanner" class="p-4 rounded-xl border flex flex-col md:flex-row items-center justify-between gap-4 transition-all bg-yellow-900/20 border-yellow-500/40 text-yellow-200">
+            <div class="flex items-center gap-3">
+                <span id="statusIndicator" class="relative flex h-3 w-3">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
+                </span>
+                <div>
+                    <h4 id="statusTitle" class="font-semibold text-sm">Initializing Cloud Sync...</h4>
+                    <p id="statusDesc" class="text-xs text-gray-300">Checking Firebase config and Anonymous Authentication state...</p>
+                </div>
+            </div>
+            <button onclick="toggleDiagnosticsModal()" class="px-3 py-1.5 text-xs bg-white/10 hover:bg-white/20 rounded-lg border border-white/10 font-medium transition">
+                ⚙️ Setup / Fix Config
+            </button>
+        </div>
+
+        <!-- Controls Section -->
+        <div class="card-blur border border-white/10 rounded-2xl p-6 shadow-2xl space-y-6">
+            
+            <!-- OMDb Key & Search Row -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-400 mb-1">OMDb API Key</label>
+                    <input type="text" id="apiKey" class="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-500" value="41bebd0">
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-xs font-semibold text-gray-400 mb-1">Movie Title Search</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="movieTitleInput" placeholder="e.g. Inception, Interstellar..." class="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-500" onkeydown="if(event.key==='Enter') searchByTitle()">
+                        <button onclick="searchByTitle()" class="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-1 shrink-0">
+                            + Add Movie
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="relative flex py-1 items-center">
+                <div class="flex-grow border-t border-white/10"></div>
+                <span class="flex-shrink mx-4 text-xs font-bold text-gray-500 tracking-wider">OR SCAN BARCODE</span>
+                <div class="flex-grow border-t border-white/10"></div>
+            </div>
+
+            <!-- Barcode Scanner Control -->
+            <div class="text-center">
+                <button onclick="startScanner()" class="bg-white/5 hover:bg-white/10 border border-white/10 text-gray-200 px-6 py-2.5 rounded-xl text-sm font-medium transition inline-flex items-center gap-2">
+                    📷 Open Barcode / QR Scanner
+                </button>
+                <div id="reader" class="mt-4 max-w-sm mx-auto overflow-hidden rounded-xl border border-white/10 hidden"></div>
+                <p id="scan-result" class="text-xs text-gray-400 mt-2"></p>
+            </div>
+        </div>
+
+        <!-- Movie Collection Grid -->
+        <div class="space-y-4">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-bold flex items-center gap-2">
+                    My Collection 
+                    <span id="count" class="bg-red-600 text-white text-xs px-2.5 py-0.5 rounded-full font-bold">0</span>
+                </h2>
+                <div class="flex gap-2">
+                    <button onclick="filterGenre('All')" class="genre-filter-btn px-3 py-1 rounded-full text-xs font-medium bg-red-600 text-white" data-genre="All">All</button>
+                    <span id="dynamicGenres"></span>
+                </div>
+            </div>
+
+            <div id="collectionGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                <!-- Movie cards dynamically inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Diagnostic & Firebase Setup Modal -->
+    <div id="diagModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="card-blur border border-white/10 max-w-2xl w-full rounded-2xl p-6 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b border-white/10 pb-4">
+                <h3 class="text-lg font-bold flex items-center gap-2">🛠️ Cloud Connection Diagnostics</h3>
+                <button onclick="toggleDiagnosticsModal()" class="text-gray-400 hover:text-white text-lg">✕</button>
+            </div>
+
+            <!-- Diagnostics Step-by-Step Checks -->
+            <div class="space-y-3">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider">Automated Diagnostic Check</h4>
+                <div id="diagStep1" class="p-3 bg-black/40 rounded-lg text-xs flex justify-between items-center">
+                    <span>1. Firebase API Key presence</span>
+                    <span id="check1" class="font-bold text-yellow-500">Checking...</span>
+                </div>
+                <div id="diagStep2" class="p-3 bg-black/40 rounded-lg text-xs flex justify-between items-center">
+                    <span>2. Anonymous Authentication setup</span>
+                    <span id="check2" class="font-bold text-yellow-500">Checking...</span>
+                </div>
+                <div id="diagStep3" class="p-3 bg-black/40 rounded-lg text-xs flex justify-between items-center">
+                    <span>3. Firestore Database reachability</span>
+                    <span id="check3" class="font-bold text-yellow-500">Checking...</span>
+                </div>
+            </div>
+
+            <!-- Firebase Config Input Box -->
+            <div class="space-y-2">
+                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider">Paste Your Firebase Config JS Object</h4>
+                <p class="text-xs text-gray-400">Paste your config keys here to save directly into your session without modifying code:</p>
+                <textarea id="configPasteArea" rows="6" placeholder='const firebaseConfig = {
+    apiKey: "AIzaSy...",
+    authDomain: "your-app.firebaseapp.com",
+    projectId: "your-app",
+    storageBucket: "your-app.appspot.com",
+    messagingSenderId: "123...",
+    appId: "1:123..."
+};' class="w-full bg-black/60 border border-white/10 rounded-lg p-3 text-xs font-mono text-gray-300 focus:outline-none focus:border-red-500"></textarea>
+                <button onclick="saveConfigFromTextarea()" class="w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-xs font-semibold transition">
+                    Save Config & Reconnect
+                </button>
+            </div>
+
+            <!-- Easy Setup Guide -->
+            <div class="space-y-2 bg-black/30 p-4 rounded-xl border border-white/5 text-xs text-gray-400">
+                <h5 class="font-semibold text-white text-sm">How to fix "Waiting for cloud connection":</h5>
+                <ol class="list-decimal pl-4 space-y-1">
+                    <li>Go to <a href="https://console.firebase.google.com" target="_blank" class="text-red-400 underline">Firebase Console</a> and create/select a project.</li>
+                    <li>Click <strong>Build > Authentication</strong>, enable <strong>Anonymous</strong> sign-in.</li>
+                    <li>Click <strong>Build > Firestore Database</strong> and click <strong>Create Database</strong> (start in Test Mode).</li>
+                    <li>Copy credentials from <strong>Project Settings > Web App</strong> and paste above.</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase Modular SDK Script -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+        // Default / Stored Firebase Configuration
+        let firebaseConfig = JSON.parse(localStorage.getItem('custom_firebase_config')) || {
+            apiKey: "AIzaSyCjkD_0JBkkumXbhG7WFlhK0prW2wxNOgI",
+  authDomain: "movie-tracker-747e8.firebaseapp.com",
+  databaseURL: "https://movie-tracker-747e8-default-rtdb.firebaseio.com",
+  projectId: "movie-tracker-747e8",
+  storageBucket: "movie-tracker-747e8.firebasestorage.app",
+  messagingSenderId: "401855328980",
+  appId: "1:401855328980:web:1d5d460d8810d856798141"
+        };
+
+        let db = null;
+        let auth = null;
+        let currentUser = null;
+        let movieCollection = [];
+        let currentFilter = 'All';
+        let html5QrcodeScanner = null;
+
+        // Diagnostic checks
+        window.addEventListener('load', () => {
+            initFirebase();
+            loadLocalStorageFallback();
+        });
+
+        function initFirebase() {
+            const check1 = document.getElementById('check1');
+            const check2 = document.getElementById('check2');
+            const check3 = document.getElementById('check3');
+
+            // 1. Check Key Validity
+            if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("YOUR_FIREBASE_API_KEY")) {
+                updateStatus('warning', 'Missing Firebase Keys', 'Using local browser storage fallback. Click Setup to configure real-time Cloud Sync.');
+                check1.innerHTML = '❌ Placeholder Keys';
+                check1.className = 'font-bold text-red-500';
+                check2.innerText = '⏭️ Skipped';
+                check3.innerText = '⏭️ Skipped';
+                return;
+            }
+
+            check1.innerHTML = '✓ Config Found';
+            check1.className = 'font-bold text-green-500';
+
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // 2. Authenticate
+                signInAnonymously(auth).catch((err) => {
+                    console.error("Auth Exception:", err);
+                    check2.innerHTML = '❌ Auth Failed (Enable in Console)';
+                    check2.className = 'font-bold text-red-500';
+                    updateStatus('error', 'Auth Error', 'Anonymous Auth is disabled in Firebase Console.');
+                });
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        currentUser = user;
+                        check2.innerHTML = '✓ Signed In Anonymously';
+                        check2.className = 'font-bold text-green-500';
+
+                        // 3. Firestore Sync Listener
+                        const moviesRef = collection(db, "users", currentUser.uid, "movies");
+                        onSnapshot(moviesRef, (snapshot) => {
+                            check3.innerHTML = '✓ Connected';
+                            check3.className = 'font-bold text-green-500';
+                            updateStatus('success', '☁️ Live Cloud Sync Active', `Synced with User ID: ${user.uid.substring(0,6)}...`);
+
+                            movieCollection = snapshot.docs.map(doc => doc.data());
+                            updateUI();
+                        }, (err) => {
+                            console.error("Firestore Listener Error:", err);
+                            check3.innerHTML = '❌ Rules Denied';
+                            check3.className = 'font-bold text-red-500';
+                            updateStatus('error', 'Database Permission Error', 'Check Firestore Security Rules in console.');
+                        });
+                    }
+                });
+
+            } catch (err) {
+                console.error("Firebase Init Error:", err);
+                updateStatus('error', 'Init Error', err.message);
+            }
+        }
+
+        function updateStatus(type, title, desc) {
+            const banner = document.getElementById('statusBanner');
+            const statusTitle = document.getElementById('statusTitle');
+            const statusDesc = document.getElementById('statusDesc');
+            const statusIndicator = document.getElementById('statusIndicator');
+
+            statusTitle.innerText = title;
+            statusDesc.innerText = desc;
+
+            if (type === 'success') {
+                banner.className = 'p-4 rounded-xl border flex flex-col md:flex-row items-center justify-between gap-4 transition-all bg-emerald-950/40 border-emerald-500/40 text-emerald-200';
+                statusIndicator.innerHTML = '<span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>';
+            } else if (type === 'error') {
+                banner.className = 'p-4 rounded-xl border flex flex-col md:flex-row items-center justify-between gap-4 transition-all bg-red-950/40 border-red-500/40 text-red-200';
+                statusIndicator.innerHTML = '<span class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>';
+            } else {
+                banner.className = 'p-4 rounded-xl border flex flex-col md:flex-row items-center justify-between gap-4 transition-all bg-yellow-950/40 border-yellow-500/40 text-yellow-200';
+                statusIndicator.innerHTML = '<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>';
+            }
+        }
+
+        // Add Movie Action
+        window.searchByTitle = async function() {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const titleInput = document.getElementById('movieTitleInput');
+            const title = titleInput.value.trim();
+
+            if (!apiKey) return alert("Please enter an OMDb API Key.");
+            if (!title) return alert("Please enter a movie title.");
+
+            try {
+                const res = await fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${apiKey}`);
+                const data = await res.json();
+
+                if (data.Response === "True") {
+                    const movieData = {
+                        Title: data.Title,
+                        Year: data.Year,
+                        Poster: data.Poster,
+                        Genre: data.Genre || 'Uncategorized',
+                        imdbID: data.imdbID
+                    };
+
+                    if (currentUser && db) {
+                        // Save to Firebase Cloud
+                        await setDoc(doc(db, "users", currentUser.uid, "movies", data.imdbID), movieData);
+                    } else {
+                        // Fallback to LocalStorage
+                        saveToLocalStorage(movieData);
+                    }
+                    titleInput.value = '';
+                } else {
+                    alert(`Movie not found: ${data.Error}`);
+                }
+            } catch (err) {
+                alert("Error connecting to OMDb API.");
+            }
+        };
+
+        // Delete Movie Action
+        window.deleteMovie = async function(imdbID) {
+            if (currentUser && db) {
+                await deleteDoc(doc(db, "users", currentUser.uid, "movies", imdbID));
+            } else {
+                movieCollection = movieCollection.filter(m => m.imdbID !== imdbID);
+                localStorage.setItem('fallback_movies', JSON.stringify(movieCollection));
+                updateUI();
+            }
+        };
+
+        // Local Storage Fallback Handlers
+        function saveToLocalStorage(movie) {
+            const exists = movieCollection.some(m => m.imdbID === movie.imdbID);
+            if (!exists) {
+                movieCollection.push(movie);
+                localStorage.setItem('fallback_movies', JSON.stringify(movieCollection));
+                updateUI();
+            }
+        }
+
+        function loadLocalStorageFallback() {
+            if (!currentUser) {
+                const stored = localStorage.getItem('fallback_movies');
+                if (stored) {
+                    movieCollection = JSON.parse(stored);
+                    updateUI();
+                }
+            }
+        }
+
+        // Scanner Handlers
+        window.startScanner = function() {
+            const readerEl = document.getElementById('reader');
+            readerEl.classList.remove('hidden');
+
+            html5QrcodeScanner = new Html5QrcodeScanner("reader", {
+                fps: 10,
+                qrbox: { width: 250, height: 150 }
+            });
+
+            html5QrcodeScanner.render((decodedText) => {
+                document.getElementById('scan-result').innerText = `Scanned Barcode: ${decodedText}`;
+                if (html5QrcodeScanner) html5QrcodeScanner.clear();
+                const apiKey = document.getElementById('apiKey').value.trim();
+                fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(decodedText)}&apikey=${apiKey}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.Response === "True") {
+                            const movieData = { Title: data.Title, Year: data.Year, Poster: data.Poster, Genre: data.Genre, imdbID: data.imdbID };
+                            if (currentUser && db) {
+                                setDoc(doc(db, "users", currentUser.uid, "movies", data.imdbID), movieData);
+                            } else {
+                                saveToLocalStorage(movieData);
+                            }
+                        }
+                    });
+            });
+        };
+
+        // UI & Filter Functions
+        function updateUI() {
+            const grid = document.getElementById('collectionGrid');
+            const countEl = document.getElementById('count');
+            
+            const filtered = currentFilter === 'All' 
+                ? movieCollection 
+                : movieCollection.filter(m => m.Genre && m.Genre.includes(currentFilter));
+
+            countEl.innerText = filtered.length;
+            grid.innerHTML = '';
+
+            if (filtered.length === 0) {
+                grid.innerHTML = `<div class="col-span-full text-center py-12 text-gray-500 border border-dashed border-white/10 rounded-xl">No movies found in this view.</div>`;
+                return;
+            }
+
+            filtered.forEach(movie => {
+                grid.innerHTML += `
+                    <div class="card-blur border border-white/10 rounded-xl overflow-hidden relative group">
+                        <button onclick="deleteMovie('${movie.imdbID}')" class="absolute top-2 right-2 bg-red-600 hover:bg-red-700 text-white rounded-full w-7 h-7 flex items-center justify-center font-bold text-xs shadow-lg z-10">✕</button>
+                        <div class="h-56 bg-black/50 overflow-hidden">
+                            <img src="${movie.Poster !== 'N/A' ? movie.Poster : 'https://placehold.co/300x440/1a1d29/fff?text=No+Poster'}" alt="${movie.Title}" class="w-full h-full object-cover">
+                        </div>
+                        <div class="p-3 space-y-1">
+                            <h4 class="font-bold text-xs line-clamp-1">${movie.Title}</h4>
+                            <p class="text-gray-400 text-[10px]">${movie.Year}</p>
+                            <span class="inline-block bg-white/5 text-gray-400 text-[9px] px-2 py-0.5 rounded border border-white/5">${movie.Genre || 'Uncategorized'}</span>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        window.toggleDiagnosticsModal = function() {
+            document.getElementById('diagModal').classList.toggle('hidden');
+        };
+
+        window.saveConfigFromTextarea = function() {
+            const text = document.getElementById('configPasteArea').value;
+            try {
+                // Parse object out of string
+                const jsonMatch = text.match(/\{[\s\S]*\}/);
+                if (!jsonMatch) throw new Error("Could not parse object structure.");
+                
+                // Clean JavaScript keys to JSON format
+                const jsonStr = jsonMatch[0]
+                    .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":')
+                                        .replace(/'/g, '"');
+                
+                const parsed = JSON.parse(jsonStr);
+                localStorage.setItem('custom_firebase_config', JSON.stringify(parsed));
+                location.reload();
+            } catch (err) {
+                alert("Invalid configuration format. Please copy the full JavaScript object from Firebase Console.");
+            }
+        };
+
+        window.filterGenre = function(genre) {
+            currentFilter = genre;
+            document.querySelectorAll('.genre-filter-btn').forEach(btn => {
+                if (btn.dataset.genre === genre) {
+                    btn.className = 'genre-filter-btn px-3 py-1 rounded-full text-xs font-medium bg-red-600 text-white';
+                } else {
+                    btn.className = 'genre-filter-btn px-3 py-1 rounded-full text-xs font-medium bg-white/5 text-gray-400 border border-white/10';
+                }
+            });
+            updateUI();
+        };
+    </script>
+</body>
+</html>
